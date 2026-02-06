@@ -1,0 +1,177 @@
+# [DFRWS USA 2026] PrZMA  
+**Prompt-Guided Zero-Touch Multi-Interaction Agent for Generating Forensic Datasets in Multi-Platform Environments**
+
+This repository is the **official repository** of *PrZMA*, a framework submitted to **DFRWS USA 2026**.  
+PrZMA leverages **LLM-driven planning and automation** to generate **reproducible, action-grounded digital forensic datasets** across **multi-user, multi-platform environments**.
+
+## 🔍 Overview
+
+Digital forensic research/education and tool validation require realistic, well-documented datasets.  
+However, real-world data is difficult to share due to privacy, legal, and ethical constraints.
+
+**PrZMA** addresses this challenge by introducing a **Prompt-Guided, Zero-Touch automation framework** that:
+
+- Interprets **forensic tool manuals** using an LLM (GPT-5.2)
+- Automatically executes **human-like interactions** across browsers and services
+- Captures **logical snapshots** of forensic artifacts at controlled points in time
+- Produces **tool-ready datasets** for education, evaluation, and regression testing
+
+PrZMA is designed for **both education-oriented scenarios** and **forensic tool testing workflows**, without requiring manual interaction during execution.
+
+---
+
+## Key Features
+
+- **Tool Manual Interpreter (TMI)**  
+  Converts unstructured forensic tool documentation (PDF / web pages) into a structured execution plan:
+  - Supported services and platforms  
+  - Target artifact types  
+  - Action boundaries and constraints  
+
+- **Prompt-Guided Automation Agent**  
+  Executes interactions using an LLM-driven planner with a strictly bounded action space:
+  - Multi-user and multi-agent coordination  
+  - Browser-based services (e.g., Discord Web, Telegram Web)  
+  - Zero-touch execution after initial configuration  
+
+- **Logical Snapshot Engine**  
+  Captures forensic artifacts based on:
+  - Time-based triggers  
+  - Action-based triggers  
+  - Platform-aware path resolution (VM-side)  
+
+- **Dual-Purpose Design**
+  - **Education**: realistic analyst-style interactions and artifact generation  
+  - **Tool Testing**: reproducible datasets for validating forensic tools and detecting artifact drift  
+
+---
+
+## Multi-Layer Artifact Collection
+
+PrZMA collects **multi-layer forensic artifacts** through **action-triggered logical snapshots**.  
+Instead of full disk imaging, the system captures artifacts across **browser**, **cloud-reflected**,  
+and **system** layers, preserving realistic interaction-driven traces.
+
+### 🌐 Browser Artifacts (Chromium-Based)
+
+| Layer | Artifact Category | Collected Items |
+|------|------------------|-----------------|
+| Browser | Core Profile Data | History, Cookies, Login Data, Preferences, Secure Preferences, Bookmarks, Web Data |
+| Browser | Web Storage | IndexedDB, Local Storage, Session Storage |
+| Browser | Service Worker | Service Worker storage |
+| Browser | Cache | CacheStorage, HTTP Cache (Cache_Data) |
+| Browser | Execution Cache | Code Cache (JavaScript bytecode) |
+| Browser | Network Metadata | Network state, TransportSecurity, Reporting/NEL |
+
+### ☁️ Cloud-Reflected Web Application Artifacts
+
+Local browser-side traces of cloud services accessed via web applications.
+
+| Layer | Application | Collected Artifacts |
+|------|------------|---------------------|
+| Cloud-Reflected | Discord Web | IndexedDB, Local Storage, Session Storage, Service Worker, CacheStorage, Code Cache |
+| Cloud-Reflected | Telegram Web | IndexedDB, Local Storage, Session Storage, Service Worker, CacheStorage, Code Cache |
+
+### 🖥️ System Artifacts (Windows)
+
+Artifacts reflecting system-level execution and user interaction.
+
+| Layer | Category | Collected Items |
+|------|---------|-----------------|
+| System | Event Logs | Windows Event Logs (EVTX) |
+| System | Execution Traces | Prefetch, Amcache, SRUM |
+| System | Registry (Source) | NTUSER.DAT, UsrClass.dat, SYSTEM, SOFTWARE, SAM, SECURITY |
+| System | User Activity | Recent Items (LNK), Jump Lists |
+| System | Filesystem | User Downloads folder |
+| System | Tasks & Services | Scheduled Tasks (XML), Service configuration |
+| System | Temporary Data | User/System Temp directories (rule-limited) |
+
+---
+
+## Supported Applications & Scenarios
+
+PrZMA currently focuses on **web-centric forensic scenarios**, including:
+
+- **Web Browsing (Chromium-based)**
+  - Google Chrome / Microsoft Edge  
+  - Search, navigation, scrolling, clicking, downloads  
+
+- **Cloud-based Messaging (Web Applications)**
+  - Discord Web (multi-agent conversations, file exchange)  
+  - Telegram Web (planned / experimental)
+
+These scenarios are sufficient to reproduce **realistic artifact footprints** commonly examined in modern investigations.
+
+---
+
+## 🗂️ Repository Structure
+
+**`Automation_Agent/`**  
+- Executes LLM-planned actions within a strictly defined action boundary.
+
+**`Tool_Manual_Interpreter/`**  
+- Interprets tool manuals or specifications to derive required interactions and target artifacts.
+
+**`Snapshot_Engine/`**  
+- Manages action- or time-triggered snapshots and artifact collection rules.
+
+**`VM_Agent/`**  
+- Runs inside the target VM and performs actual interactions (browser, Discord, etc.).
+- **Note**: All paths are used as-is inside the VM environment. (Please refer to the VM Preparation section below)
+
+**`shared/`**  
+- Common schemas, action definitions, and wire formats shared across components.
+
+**`main.py`** 
+- Entry point that initializes the pipeline and coordinates interpreter, agent, and snapshot execution.
+
+**`przma_config.json`** 
+- Unified configuration describing agents, platforms, scenarios, and snapshot policies.
+
+**`przma_education.ps1`** 
+- Launcher script for education-oriented multi-agent scenarios.
+
+**`przma_tooltest.ps1`** 
+- Launcher script for tool-testing and validation workflows.
+
+---
+
+## Requirements
+
+- Windows host with VMware Workstation
+- Python 3.10+
+- Playwright (Chromium-based browsers)
+- OpenAI API access (GPT-5.2)
+- Multiple Windows VMs for multi-agent scenarios
+
+### VM Preparation
+
+For multi-agent execution, PrZMA requires **Windows virtual machines configured identically to the host environment**.
+
+1. Create one or more Windows VMs using VMware Workstation  
+   (same OS version and browser environment as the host is recommended).
+
+2. Inside each VM, copy the `VM_Agent/` directory to the root path: `C:\VM_Agent\`
+
+
+3. From an elevated PowerShell session inside the VM, initialize the agent by running: `init.ps1`
+
+
+4. Once initialized, the VM Agent runs in the background and waits for commands from the host-side controller.
+
+Each VM represents an independent agent and can participate in multi-user or multi-platform scenarios. (For most scenarios, users only need to modify `przma_config.json`.)
+
+## 🎓 Typical Use Cases
+
+- **Forensic Education**
+  - Generate clean, reproducible datasets for training and coursework  
+  - Avoid privacy and legal issues of real user data  
+
+- **Forensic Tool Testing**
+  - Validate whether a tool correctly detects known interactions  
+  - Compare tool outputs against known ground-truth actions  
+
+- **Research & Benchmarking**
+  - Study artifact drift across browser or application versions  
+  - Evaluate forensic tool coverage and limitations  
+
