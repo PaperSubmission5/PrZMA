@@ -178,7 +178,7 @@ def _build_tooltesting_persona(
     required_actions: List[Dict[str, Any]],
     forbidden_actions: List[Dict[str, Any]],
     required_artifacts: List[str],
-    action_intent_guidance: str = "",  # <- (추가) TMI가 채우면 여기에 넣기
+    action_intent_guidance: str = "", 
 ) -> str:
     ra = [x.get("name") for x in (required_actions or []) if isinstance(x, dict) and x.get("name")]
     fa = [x.get("name") for x in (forbidden_actions or []) if isinstance(x, dict) and x.get("name")]
@@ -187,7 +187,6 @@ def _build_tooltesting_persona(
     fa_s = ", ".join([str(x) for x in fa[:24]]) if fa else "(none)"
     art_s = ", ".join([str(x) for x in (required_artifacts or [])[:24]]) if required_artifacts else "(none)"
 
-    # 일반 행동 규칙 (tool/site 무관)
     artifact_first_guidance = (
         "Artifact-first execution rules:\n"
         "- Choose actions to intentionally generate the required_artifacts (not merely to follow required_actions).\n"
@@ -202,15 +201,12 @@ def _build_tooltesting_persona(
             "- After execution, check success (ok=true). If ok=false, switch to a different URL rather than retrying.\n"
             "- Prefer URLs that match the artifact goal implied by required_artifacts.\n"
         )
-
-    # reason: 템플릿 금지 문구는 완화하고, “구체성”만 강제
     reason_guidance = (
         "Reason-writing rules:\n"
         "- Write one short sentence that links (artifact goal) + (intent) + (expected effect).\n"
         "- Avoid repeating the exact same reason text across steps.\n"
     )
 
-    # TMI가 주는 구체 힌트(있으면) 주입
     intent_block = ""
     if action_intent_guidance and action_intent_guidance.strip():
         intent_block = (

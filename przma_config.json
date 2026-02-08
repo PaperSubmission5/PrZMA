@@ -30,10 +30,10 @@
     "gui": true,
     "vmrun_path": "C:\\Program Files (x86)\\VMware\\VMware Workstation\\vmrun.exe",
     "vmx_paths": {
-      "A1": "C:\\Users\\YHD\\Documents\\Virtual Machines\\VM_Agent\\VM_Agent.vmx",
-      "A2": "C:\\Users\\YHD\\Documents\\Virtual Machines\\Clone of VM_Agent\\Clone of VM_Agent.vmx",
-      "A3": "C:\\Users\\YHD\\Documents\\Virtual Machines\\Clone2 of VM_Agent\\Clone of VM_Agent.vmx",
-      "A4": "C:\\Users\\YHD\\Documents\\Virtual Machines\\Clone3 of VM_Agent\\Clone of VM_Agent.vmx"
+      "A1": "C:\\Users\\...\\VM_Agent.vmx",
+      "A2": "C:\\Users\\...\\Clone of VM_Agent.vmx",
+      "A3": "C:\\Users\\...\\Clone of VM_Agent.vmx",
+      "A4": "C:\\Users\\...\\Clone of VM_Agent.vmx"
     },
     "wait_timeout_sec": 180,
     "poll_interval_sec": 2.0
@@ -41,7 +41,7 @@
 
   "discovery": {
     "rpyc_port": 18861,
-    "subnet": "192.168.253.0/24"
+    "subnet": "..."
   },
 
   "snapshot": {
