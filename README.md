@@ -4,6 +4,21 @@
 This repository is the **official repository** of *PrZMA*, a framework submitted to **DFRWS USA 2026**.  
 PrZMA leverages **LLM-driven planning and automation** to generate **reproducible, action-grounded digital forensic datasets** across **multi-user, multi-platform environments**.
 
+<details>
+<summary>📑 Table of Contents</summary>
+
+- [Overview](#-overview)
+- [Key Features](#key-features)
+- [Multi-Layer Artifact Collection](#multi-layer-artifact-collection)
+- [Supported Applications & Scenarios](#supported-applications--scenarios)
+- [Repository Structure](#-repository-structure)
+- [Requirements](#requirements)
+- [Demo](#-demo)
+- [All Trigger Mode (Tool Testing)](#-all-trigger-mode-tool-testing)
+- [Typical Use Cases](#-typical-use-cases)
+
+</details>
+
 ## 🔍 Overview
 
 Digital forensic research/education and tool validation require realistic, well-documented datasets.  
@@ -43,6 +58,7 @@ PrZMA is designed for **both education-oriented scenarios** and **forensic tool 
 - **Dual-Purpose Design**
   - **Education**: realistic analyst-style interactions and artifact generation  
   - **Tool Testing**: reproducible datasets for validating forensic tools and detecting artifact drift  
+    - **All Trigger Mode**: Exhaustively activates UI elements and performs action-level logical snapshots to induce functionality-driven artifact schema changes.
 
 ---
 
