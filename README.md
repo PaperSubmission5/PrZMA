@@ -200,7 +200,7 @@ The demo illustrates how PrZMA generates realistic, role-driven interactions and
 
 [![PrZMA Education Demo](https://img.youtube.com/vi/a6jJPpnSnU4/0.jpg)](https://www.youtube.com/watch?v=a6jJPpnSnU4)
 
-## 🧪 All Trigger Mode (Tool Testing)
+## ⚙️ All Trigger Mode (Tool Testing)
 
 In Tool Testing mode, PrZMA provides an **All Trigger** strategy that systematically activates all detectable clickable UI elements within a bounded Action Space.
 
@@ -215,9 +215,7 @@ For each action-level Logical Snapshot, PrZMA performs the following:
 
 This enables structured cross-snapshot comparison and quantitative observation of state changes induced by service functionality.
 
----
-
-## 🔎 Demonstration: Discord Snapshot Comparison
+### 🔎 Demonstration: Discord Snapshot Comparison
 
 Three All Trigger executions were performed on Discord Web:
 
@@ -227,8 +225,6 @@ Three All Trigger executions were performed on Discord Web:
 
 All execution results were stored in the Tracking DB and compared using SQLite queries.
 
----
-
 ### #1. Cache Diff (`discord_ft1` vs `discord_ft2`)
 
 The following result shows cache entries present only in `discord_ft2` compared to `discord_ft1`.
@@ -237,8 +233,6 @@ The following result shows cache entries present only in `discord_ft2` compared 
 
 Entries labeled `ft2_only` represent URL/key pairs observed exclusively in the later snapshot (`discord_ft2.cache_dump`).  
 These indicate newly generated cache data triggered by additional interactions.
-
----
 
 ### #2. Schema Change (`discord_ft1` vs `discord_ft3`)
 
