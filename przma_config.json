@@ -1,7 +1,8 @@
 {
   "schema_version": "1.0.0",
   "purpose": "",
-
+  "run_full_trigger": false,
+  "full_trigger_base_url": null,
   "agents": {},
 
   "rendezvous": {
@@ -30,10 +31,10 @@
     "gui": true,
     "vmrun_path": "C:\\Program Files (x86)\\VMware\\VMware Workstation\\vmrun.exe",
     "vmx_paths": {
-      "A1": "C:\\Users\\...\\VM_Agent.vmx",
-      "A2": "C:\\Users\\...\\Clone of VM_Agent.vmx",
-      "A3": "C:\\Users\\...\\Clone of VM_Agent.vmx",
-      "A4": "C:\\Users\\...\\Clone of VM_Agent.vmx"
+      "A1": "C:\\Users\\...\\VM_Agent1.vmx",
+      "A2": "C:\\Users\\...\\VM_Agent2.vmx",
+      "A3": "C:\\Users\\...\\VM_Agent3.vmx",
+      "A4": "C:\\Users\\...\\VM_Agent4.vmx"
     },
     "wait_timeout_sec": 180,
     "poll_interval_sec": 2.0
@@ -41,7 +42,7 @@
 
   "discovery": {
     "rpyc_port": 18861,
-    "subnet": "..."
+    "subnet": "192.168.253.0/24"
   },
 
   "snapshot": {

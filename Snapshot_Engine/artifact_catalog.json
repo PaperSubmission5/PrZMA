@@ -107,6 +107,15 @@
         "meta": { "browser": "edge" }
       },
 
+      "chromium.cache.cache_data": {
+        "layer": "browser_artifacts",
+        "description": "Cache_Data (Chrome profile cache)",
+        "paths": [
+          "{CHROME_ROOT}\\\\{PROFILE}\\\\Cache\\\\Cache_Data"
+        ],
+        "meta": { "browser": "chrome" }
+      },
+
       "chromium.storage.cachestorage": {
         "layer": "browser_artifacts",
         "description": "CacheStorage directory (Chrome profile)",
@@ -159,15 +168,6 @@
           "{EDGE_ROOT}\\\\{PROFILE}\\\\Code Cache"
         ],
         "meta": { "browser": "edge" }
-      },
-
-      "chromium.cache.cache_data": {
-        "layer": "browser_artifacts",
-        "description": "Cache_Data (Chrome profile cache)",
-        "paths": [
-          "{CHROME_ROOT}\\\\{PROFILE}\\\\Cache\\\\Cache_Data"
-        ],
-        "meta": { "browser": "chrome" }
       },
 
       "edge.cache.cache_data": {

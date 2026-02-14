@@ -61,6 +61,36 @@
       "layers_touched": ["application.browser", "cloud_reflected"],
       "artifacts_hint": ["CacheStorage/Service Worker caches", "HTTP cache entries", "cookies"]
     },
+    {
+      "name": "browser.get_clickables",
+      "namespace": "browser",
+      "summary": "Enumerate clickable elements on the current page (runtime DOM). Used by full-trigger (tool testing).",
+      "params_schema": {
+        "type": "object",
+        "properties": { "timeout_ms": { "type": "integer" } },
+        "required": [],
+        "additionalProperties": false
+      },
+      "side_effects": ["reads_dom_state"],
+      "layers_touched": ["application.browser"],
+      "artifacts_hint": ["none (runtime only)"]
+    },
+    {
+      "name": "browser.click",
+      "namespace": "browser",
+      "summary": "Click an element by CSS selector. Used by full-trigger or when selector is known.",
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "selector": { "type": "string", "minLength": 1 },
+          "timeout_ms": { "type": "integer" }
+        },
+        "required": ["selector"],
+        "additionalProperties": false
+      },
+      "side_effects": ["clicks_dom_element", "may_trigger_navigation"],
+      "layers_touched": ["application.browser", "cloud_reflected"]
+    },
 
     {
       "name": "browser.smart_click",
@@ -291,29 +321,163 @@
     },
     
     {
-    "name": "discord.upload_file",
-    "namespace": "discord",
-    "summary": "Upload a file in the currently opened Discord channel, optionally sending a message.",
-    "llm_guidance": [
+      "name": "discord.upload_file",
+      "namespace": "discord",
+      "summary": "Upload a file in the currently opened Discord channel, optionally sending a message.",
+      "llm_guidance": [
         "Use this when the scenario requires file exchange.",
+        "Choose file from the File Catalog (file.json): use file_key (e.g. 'artifact', 'dog', 'club_rule_pdf') or file_path (VM path).",
         "If you need to describe the file, include params.text.",
-        "Never upload secrets; file_path must refer to an allowed preset file on the VM."
-    ],
-    "params_schema": {
+        "Never upload secrets; use only files listed in file.json."
+      ],
+      "params_schema": {
         "type": "object",
         "properties": {
-        "file_path": { "type": "string", "minLength": 1 },
-        "text": { "type": "string" },
-        "timeout_ms": { "type": "integer" }
+          "file_path": { "type": "string", "minLength": 1 },
+          "file_key": { "type": "string", "description": "Id from file.json; resolved to file_path on Host" },
+          "text": { "type": "string" },
+          "timeout_ms": { "type": "integer" }
         },
-        "required": ["file_path"],
+        "required": [],
         "additionalProperties": false
+      },
+      "side_effects": ["writes_cloud_message", "writes_local_artifacts"],
+      "layers_touched": ["application.discord", "application.browser", "cloud_reflected"],
+      "artifacts_hint": ["Attachment-related cache/IndexedDB updates", "Network traces"]
     },
-    "side_effects": ["writes_cloud_message", "writes_local_artifacts"],
-    "layers_touched": ["application.discord", "application.browser", "cloud_reflected"],
-    "artifacts_hint": ["Attachment-related cache/IndexedDB updates", "Network traces"]
+    {
+      "name": "discord.delete_message",
+      "namespace": "discord",
+      "summary": "Delete a previously sent message.",
+      "llm_guidance": ["Targets the last message by default. Use to remove own message."],
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "which": { "type": "string", "enum": ["last", "last_n"], "default": "last" },
+          "n": { "type": "integer", "minimum": 1, "default": 1 },
+          "timeout_ms": { "type": "integer" }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "side_effects": ["removes_cloud_message"],
+      "layers_touched": ["application.discord", "cloud_reflected"]
     },
-
+    {
+      "name": "discord.reply_message",
+      "namespace": "discord",
+      "summary": "Reply to a specific message.",
+      "llm_guidance": ["Use target 'last' to reply to the most recent message in the channel."],
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "minLength": 1, "maxLength": 5000 },
+          "target": { "type": "string", "enum": ["last", "last_other"], "default": "last" },
+          "timeout_ms": { "type": "integer" }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "side_effects": ["creates_cloud_message", "writes_local_artifacts"],
+      "layers_touched": ["cloud_reflected", "application.discord", "application.browser"]
+    },
+    {
+      "name": "discord.react_message",
+      "namespace": "discord",
+      "summary": "Add an emoji reaction to a message.",
+      "llm_guidance": ["Use Unicode emoji (e.g. 👍, ❤️) or name like 'thumbsup'. Targets last message by default."],
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "emoji": { "type": "string", "minLength": 1 },
+          "emoji_name": { "type": "string" },
+          "target": { "type": "string", "enum": ["last"], "default": "last" },
+          "timeout_ms": { "type": "integer" }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "side_effects": ["updates_cloud_message"],
+      "layers_touched": ["application.discord", "cloud_reflected"]
+    },
+    {
+      "name": "telegram.open",
+      "namespace": "telegram",
+      "summary": "Open Telegram Web and initialize session.",
+      "llm_guidance": ["Call first when using Telegram. Use variant 'k' for web.telegram.org/k/."],
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "variant": { "type": "string", "enum": ["k", "a"], "default": "k" },
+          "timeout_ms": { "type": "integer" }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "side_effects": ["opens_telegram_web"],
+      "layers_touched": ["application.browser", "application.telegram"]
+    },
+    {
+      "name": "telegram.select_chat",
+      "namespace": "telegram",
+      "summary": "Select a target chat via search.",
+      "llm_guidance": ["Provide chat name or username in params.chat."],
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "chat": { "type": "string", "minLength": 1 },
+          "variant": { "type": "string", "enum": ["k", "a"] },
+          "timeout_ms": { "type": "integer" }
+        },
+        "required": ["chat"],
+        "additionalProperties": false
+      },
+      "side_effects": ["changes_active_chat"],
+      "layers_touched": ["application.telegram", "application.browser"]
+    },
+    {
+      "name": "telegram.send_message",
+      "namespace": "telegram",
+      "summary": "Send a short message to the active chat.",
+      "llm_guidance": ["Optionally set chat first with telegram.select_chat. Keep messages short."],
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "chat": { "type": "string" },
+          "variant": { "type": "string" },
+          "timeout_ms": { "type": "integer" }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "side_effects": ["creates_cloud_message", "writes_local_artifacts"],
+      "layers_touched": ["application.telegram", "cloud_reflected", "application.browser"]
+    },
+    {
+      "name": "telegram.upload_file",
+      "namespace": "telegram",
+      "summary": "Upload a file to the active chat.",
+      "llm_guidance": [
+        "Choose file from File Catalog (file.json): use file_key or file_path (VM path).",
+        "Optionally include message to send with the file."
+      ],
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": { "type": "string", "minLength": 1 },
+          "file_key": { "type": "string" },
+          "message": { "type": "string" },
+          "chat": { "type": "string" },
+          "variant": { "type": "string" },
+          "timeout_ms": { "type": "integer" }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "side_effects": ["writes_cloud_message", "writes_local_artifacts"],
+      "layers_touched": ["application.telegram", "cloud_reflected", "application.browser"]
+    },
     {
       "name": "telegram.login",
       "namespace": "telegram",

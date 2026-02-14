@@ -84,10 +84,24 @@ class BrowserService:
             args=extra_args,
         )
         page = context.new_page()
+        # Ensure page is ready before returning
         try:
             page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
         except Exception:
-            pass
+            # If goto fails, try to verify page is still valid
+            try:
+                _ = page.url  # Test if page is accessible
+            except Exception:
+                # Page is invalid, create a new one
+                try:
+                    page.close()
+                except Exception:
+                    pass
+                page = context.new_page()
+                try:
+                    page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
+                except Exception:
+                    pass
         browser = context.browser
 
         sess = BrowserSession(
@@ -125,7 +139,24 @@ class BrowserService:
     def _page(self, agent_id: str) -> Page:
         if agent_id not in self._sessions:
             raise RuntimeError(f"Browser session not launched for agent_id={agent_id}")
-        return self._sessions[agent_id].page
+        sess = self._sessions[agent_id]
+        # Verify page is still valid
+        try:
+            if sess.page.is_closed():
+                raise RuntimeError("page closed")
+            _ = sess.page.url  # Test if page is accessible
+        except Exception:
+            # Page is closed or invalid, create a new one
+            try:
+                sess.page.close()
+            except Exception:
+                pass
+            sess.page = sess.context.new_page()
+            try:
+                sess.page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
+            except Exception:
+                pass
+        return sess.page
     # Action handlers
     def action_launch(self, agent_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -149,6 +180,207 @@ class BrowserService:
         page = self._page(agent_id)
         page.locator(selector).first.click(timeout=timeout_ms)
         return {"clicked": selector}
+
+    def action_get_clickables(self, agent_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enumerate clickable elements on the current page (runtime DOM).
+        Returns: { "current_url": str, "clickables": [ {"selector": str, "tag": str, "text": str}, ... ] }
+        Used by full-trigger: click each → trigger snapshot → goto base_url → next.
+        """
+        timeout_ms = int(params.get("timeout_ms", 30000))  # Increased default timeout
+        page = self._page(agent_id)
+        
+        # Wait for page to be ready, especially for Discord SPA
+        current_url = page.url or ""
+        if "discord.com" in current_url:
+            # Wait for Discord to load: look for message list or main content
+            try:
+                # Wait for either message list or main app container
+                page.wait_for_selector(
+                    "ol[data-list-id='chat-messages'], div[class*='chatContent'], div[class*='app']",
+                    timeout=min(timeout_ms, 15000),
+                    state="attached"
+                )
+            except Exception:
+                pass  # Continue even if selector not found
+            # Additional wait for dynamic content
+            page.wait_for_timeout(2000)
+        
+        js = """
+        () => {
+            const clickables = [];
+            
+            // More comprehensive selector for Discord and modern SPAs
+            // Discord uses div[role="button"], div with click handlers, etc.
+            const selectors = [
+                'a[href]',
+                'button:not([disabled])',
+                '[role="button"]',
+                '[role="link"]',
+                '[role="menuitem"]',
+                '[role="option"]',
+                'input[type="submit"]',
+                'input[type="button"]',
+                '[onclick]',
+                '[tabindex]:not([tabindex="-1"])',
+                // Discord-specific: divs with click handlers or cursor pointer
+                'div[class*="button"]',
+                'div[class*="Button"]',
+                'div[style*="cursor: pointer"]',
+            ];
+            
+            // Collect all candidates
+            const candidates = new Set();
+            for (const sel of selectors) {
+                try {
+                    document.querySelectorAll(sel).forEach(el => candidates.add(el));
+                } catch (e) {
+                    // Invalid selector, skip
+                }
+            }
+            
+            // Also check for elements with click event listeners (Discord pattern)
+            // Walk through all elements and check if they're clickable
+            const allElements = document.querySelectorAll('*');
+            for (const el of allElements) {
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                // Check if element looks clickable
+                if (style.cursor === 'pointer' || 
+                    el.onclick !== null ||
+                    el.getAttribute('onclick') ||
+                    (el.tagName === 'DIV' && rect.width > 20 && rect.height > 20 && style.cursor !== 'default')) {
+                    candidates.add(el);
+                }
+            }
+            
+            function buildSelector(el) {
+                // Try ID first
+                if (el.id && /^[a-zA-Z][\\w.-]*$/.test(el.id)) {
+                    return '#' + CSS.escape(el.id);
+                }
+                
+                // Try data attributes (Discord uses these)
+                if (el.getAttribute('data-list-id')) {
+                    return `[data-list-id="${CSS.escape(el.getAttribute('data-list-id'))}"]`;
+                }
+                if (el.getAttribute('aria-label')) {
+                    const label = el.getAttribute('aria-label');
+                    return `[aria-label="${CSS.escape(label)}"]`;
+                }
+                
+                // Build path
+                const path = [];
+                let current = el;
+                while (current && current.nodeType === 1 && path.length < 15) {
+                    let part = current.tagName.toLowerCase();
+                    if (current.id && /^[a-zA-Z][\\w.-]*$/.test(current.id)) {
+                        path.unshift('#' + CSS.escape(current.id));
+                        break;
+                    }
+                    // Add class if unique enough
+                    const classes = Array.from(current.classList || []).filter(c => c.length > 0);
+                    if (classes.length > 0 && classes.length < 5) {
+                        part += '.' + classes.map(c => CSS.escape(c)).join('.');
+                    }
+                    let sibling = current;
+                    let nth = 1;
+                    while (sibling.previousElementSibling) {
+                        sibling = sibling.previousElementSibling;
+                        if (sibling.tagName === current.tagName) nth++;
+                    }
+                    if (nth > 1) {
+                        path.unshift(part + ':nth-of-type(' + nth + ')');
+                    } else {
+                        path.unshift(part);
+                    }
+                    current = current.parentElement;
+                    if (current && current.tagName === 'BODY') break;
+                }
+                return path.join(' > ');
+            }
+            
+            const seen = new Set();
+            for (const el of candidates) {
+                if (!el || el.nodeType !== 1) continue;
+                
+                const rect = el.getBoundingClientRect();
+                const style = window.getComputedStyle(el);
+                
+                // Skip hidden elements
+                if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) < 0.1) {
+                    continue;
+                }
+                
+                // Skip very small elements (but allow small icons)
+                if (rect.width < 1 && rect.height < 1 && el.tagName !== 'BODY') {
+                    continue;
+                }
+                
+                // Skip elements outside viewport (but include some margin)
+                if (rect.bottom < -50 || rect.top > window.innerHeight + 50) {
+                    continue;
+                }
+                
+                const selector = buildSelector(el);
+                if (!selector || seen.has(selector)) continue;
+                seen.add(selector);
+                
+                const text = (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 120);
+                clickables.push({ 
+                    selector, 
+                    tag: el.tagName.toLowerCase(), 
+                    text: text || selector.slice(0, 50),
+                    role: el.getAttribute('role') || '',
+                });
+            }
+            
+            return { 
+                clickables, 
+                current_url: window.location.href, 
+                count: clickables.length,
+                debug: {
+                    candidates_found: candidates.size,
+                    after_filter: clickables.length
+                }
+            };
+        }
+        """
+        try:
+            out = page.evaluate(js)
+            current_url = out.get("current_url") if isinstance(out, dict) else None
+            if not current_url:
+                current_url = page.url
+            if not current_url:
+                # Fallback: try to get URL from page
+                try:
+                    current_url = page.evaluate("() => window.location.href")
+                except Exception:
+                    current_url = ""
+            
+            clickables_list = (out.get("clickables") or []) if isinstance(out, dict) else []
+            count = out.get("count", len(clickables_list)) if isinstance(out, dict) else len(clickables_list)
+            
+            # If no clickables found on Discord, wait a bit more and retry once
+            if len(clickables_list) == 0 and "discord.com" in current_url:
+                page.wait_for_timeout(3000)
+                try:
+                    out = page.evaluate(js)
+                    clickables_list = (out.get("clickables") or []) if isinstance(out, dict) else []
+                except Exception:
+                    pass
+            
+            return {
+                "current_url": current_url or "",
+                "clickables": clickables_list,
+                "count": len(clickables_list),
+            }
+        except Exception as e:
+            try:
+                fallback_url = page.url or page.evaluate("() => window.location.href")
+            except Exception:
+                fallback_url = ""
+            return {"current_url": fallback_url, "clickables": [], "error": str(e), "count": 0}
 
     def action_type(self, agent_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         selector = params["selector"]
@@ -178,7 +410,158 @@ class BrowserService:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         page.screenshot(path=path, full_page=full_page)
         return {"screenshot_path": path}
-    
+
+    def capture_page_state(self, agent_id: str, out_dir: str) -> Dict[str, str]:
+        """
+        Capture current page for schema-tracking: HTML, DOM tree, screenshot, IndexedDB schema.
+        Must be called from the thread that owns the page (e.g. ActionWorker).
+        Returns paths relative to out_dir: html_path, dom_path, screenshot_path, schema_path.
+        """
+        page = self._page(agent_id)
+        os.makedirs(out_dir, exist_ok=True)
+        base = os.path.join(out_dir, "web_state")
+        html_path = base + "_page.html"
+        dom_path = base + "_dom.json"
+        screenshot_path = base + "_screenshot.png"
+        schema_path = base + "_indexeddb_schema.json"
+
+        # 1) Full HTML
+        try:
+            html = page.content()
+            with open(html_path, "w", encoding="utf-8", errors="replace") as f:
+                f.write(html)
+        except Exception:
+            pass
+
+        # 2) Simplified DOM tree (tagName, child count, id/class for comparison)
+        try:
+            dom_script = """
+            () => {
+                function walk(el, depth) {
+                    if (depth > 50) return null;
+                    const obj = { tag: el.tagName ? el.tagName.toLowerCase() : null, id: el.id || null, class: el.className && typeof el.className === 'string' ? el.className.slice(0, 200) : null, childCount: el.childElementCount || 0, children: [] };
+                    for (let i = 0; i < Math.min((el.children && el.children.length) || 0, 100); i++) {
+                        const c = walk(el.children[i], depth + 1);
+                        if (c) obj.children.push(c);
+                    }
+                    return obj;
+                }
+                return walk(document.documentElement || document.body, 0);
+            }
+            """
+            dom_tree = page.evaluate(dom_script)
+            with open(dom_path, "w", encoding="utf-8") as f:
+                json.dump(dom_tree, f, ensure_ascii=False, indent=0)
+        except Exception:
+            pass
+
+        # 3) Screenshot
+        try:
+            page.screenshot(path=screenshot_path, full_page=True)
+        except Exception:
+            pass
+
+        # 4) IndexedDB schema (databases + object store names)
+        try:
+            # Use page.evaluate() with async function - Playwright automatically awaits async functions
+            # But we'll add explicit error handling and logging
+            idb_script = """
+            async () => {
+                if (typeof indexedDB === 'undefined') {
+                    return [{ error: 'indexedDB is undefined' }];
+                }
+                try {
+                    // indexedDB.databases() is available in modern browsers
+                    let dbs = [];
+                    if (indexedDB.databases) {
+                        dbs = await indexedDB.databases();
+                    } else {
+                        return [{ error: 'indexedDB.databases() not available' }];
+                    }
+                    
+                    if (!dbs || dbs.length === 0) {
+                        return [{ info: 'No IndexedDB databases found' }];
+                    }
+                    
+                    const out = [];
+                    for (const db of dbs) {
+                        try {
+                            const info = await new Promise((res) => {
+                                const r = indexedDB.open(db.name);
+                                let resolved = false;
+                                
+                                r.onsuccess = () => {
+                                    if (resolved) return;
+                                    resolved = true;
+                                    try {
+                                        const d = r.result;
+                                        const stores = Array.from(d.objectStoreNames || []);
+                                        d.close();
+                                        res({ name: db.name, version: db.version, objectStores: stores });
+                                    } catch (e) {
+                                        res({ name: db.name, error: String(e) });
+                                    }
+                                };
+                                
+                                r.onerror = () => {
+                                    if (resolved) return;
+                                    resolved = true;
+                                    res({ name: db.name, error: String(r.error || 'Unknown error') });
+                                };
+                                
+                                // Timeout fallback (5 seconds)
+                                setTimeout(() => {
+                                    if (!resolved) {
+                                        resolved = true;
+                                        res({ name: db.name, error: 'Timeout opening database (5s)' });
+                                    }
+                                }, 5000);
+                            });
+                            out.push(info);
+                        } catch (e) {
+                            out.push({ name: db.name || 'unknown', error: String(e) });
+                        }
+                    }
+                    return out;
+                } catch (e) {
+                    return [{ error: `Failed to enumerate databases: ${String(e)}` }];
+                }
+            }
+            """
+            # Playwright's evaluate() automatically awaits async functions
+            schema_list = page.evaluate(idb_script)
+            
+            # Ensure we got a list (not a Promise or other type)
+            if not isinstance(schema_list, list):
+                if schema_list is None:
+                    schema_list = []
+                else:
+                    schema_list = [{"error": f"Unexpected result type: {type(schema_list).__name__}", "raw": str(schema_list)[:200]}]
+            
+            # Log if empty to help debug
+            import logging
+            if len(schema_list) == 0:
+                logging.getLogger(__name__).warning("IndexedDB schema extraction returned empty list - no databases found")
+            else:
+                logging.getLogger(__name__).debug(f"IndexedDB schema extraction found {len(schema_list)} database(s)")
+            
+            with open(schema_path, "w", encoding="utf-8") as f:
+                json.dump(schema_list, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            # Log error but don't fail snapshot collection
+            import logging
+            import traceback
+            logging.getLogger(__name__).warning(f"Failed to extract IndexedDB schema: {e}\n{traceback.format_exc()}")
+            with open(schema_path, "w", encoding="utf-8") as f:
+                json.dump([{"error": str(e), "type": type(e).__name__, "traceback": traceback.format_exc()}], f, ensure_ascii=False, indent=2)
+
+        return {
+            "html_path": html_path,
+            "dom_path": dom_path,
+            "screenshot_path": screenshot_path,
+            "schema_path": schema_path,
+        }
+
     def action_scroll(self, agent_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Scroll the page.
@@ -399,7 +782,7 @@ class BrowserService:
             if (!r || r.width <= 0 || r.height <= 0) continue;
             if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
 
-            // viewport 내부 우선
+            // Prefer in-viewport elements
             const inView = r.bottom > 0 && r.right > 0 && r.top < (window.innerHeight || 0) && r.left < (window.innerWidth || 0);
             if (!inView) continue;
 
@@ -498,7 +881,7 @@ class BrowserService:
             const tag = (el.tagName || '').toLowerCase();
             const type = (tag === 'input') ? ((el.getAttribute('type') || '').toLowerCase()) : '';
             if (tag === 'input') {
-              // text/search/email/url만
+              // Only allow text/search/email/url inputs
               const ok = ['text','search','email','url',''].includes(type);
               if (!ok) continue;
             }
@@ -598,6 +981,8 @@ class BrowserService:
             return self.action_goto(agent_id, params)
         if verb == "click":
             return self.action_click(agent_id, params)
+        if verb == "get_clickables":
+            return self.action_get_clickables(agent_id, params)
         if verb == "type":
             return self.action_type(agent_id, params)
         if verb == "press":

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -69,6 +70,89 @@ def _safe_relpath(p: Path, base: Path) -> str:
         return str(p.relative_to(base))
     except Exception:
         return p.name
+
+
+def _read_file_bytes_win32_shared(path: Path) -> Optional[bytes]:
+    """Windows: read a file opened by another process using FILE_SHARE_READ (useful for cache index files)."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        GENERIC_READ = 0x80000000
+        FILE_SHARE_READ = 0x1
+        OPEN_EXISTING = 3
+        INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
+        path_str = str(path.resolve())
+        handle = kernel32.CreateFileW(
+            path_str,
+            GENERIC_READ,
+            FILE_SHARE_READ,
+            None,
+            OPEN_EXISTING,
+            0,
+            None,
+        )
+        if handle == INVALID_HANDLE_VALUE:
+            return None
+        try:
+            size = path.stat().st_size
+            if size <= 0:
+                return b""
+            buf = (ctypes.c_byte * size)()
+            n = wintypes.DWORD()
+            ok = kernel32.ReadFile(handle, buf, size, ctypes.byref(n), None)
+            if not ok:
+                return None
+            return bytes(buf[: n.value])
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return None
+
+
+def _read_file_bytes_win32_robocopy_backup(path: Path) -> Optional[bytes]:
+    """Windows: copy a locked file via robocopy /B (backup mode) then read it."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import subprocess
+        import tempfile
+        path = path.resolve()
+        if not path.is_file():
+            return None
+        parent = path.parent
+        name = path.name
+        with tempfile.TemporaryDirectory(prefix="przma_robocopy_") as tmp:
+            dest = Path(tmp)
+            r = subprocess.run(
+                ["robocopy", str(parent), str(dest), name, "/B", "/R:0", "/W:0"],
+                capture_output=True,
+                timeout=30,
+                text=True,
+            )
+            if dest.joinpath(name).exists():
+                return dest.joinpath(name).read_bytes()
+    except Exception:
+        pass
+    return None
+
+
+def _read_file_bytes(path: Path) -> Optional[bytes]:
+    """Read file bytes. On Windows, retry with (1) shared read then (2) robocopy backup mode."""
+    try:
+        return path.read_bytes()
+    except Exception:
+        pass
+    if sys.platform == "win32":
+        out = _read_file_bytes_win32_shared(path)
+        if out is not None:
+            return out
+        if "Cache_Data" in path.parts or (path.name in ("index", "index-dir") or path.name.startswith("data_")):
+            return _read_file_bytes_win32_robocopy_backup(path)
+    return None
+
 
 class Snapper:
     def __init__(self, staging_root: str = "snapshots_staging"):
@@ -190,7 +274,6 @@ class Snapper:
             layer_dir = stage_dir / "artifacts" / layer / safe_key
             layer_dir.mkdir(parents=True, exist_ok=True)
 
-
             if base_dir is not None:
                 rel = _safe_relpath(src, base_dir)
                 dst = layer_dir / Path(rel)
@@ -198,7 +281,10 @@ class Snapper:
             else:
                 dst = layer_dir / src.name
 
-            dst.write_bytes(src.read_bytes())
+            data = _read_file_bytes(src)
+            if data is None:
+                return (None, 0)
+            dst.write_bytes(data)
 
             return (
                 CollectedArtifact(
@@ -220,4 +306,6 @@ class Snapper:
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for p in folder.rglob("*"):
                 if p.is_file():
-                    zf.write(p, arcname=str(p.relative_to(folder)))
+                    # Use forward slashes so cache dump prefix matching works cross-platform
+                    arcname = p.relative_to(folder).as_posix()
+                    zf.write(p, arcname=arcname)

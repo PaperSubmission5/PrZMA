@@ -184,6 +184,67 @@ The demo illustrates how PrZMA generates realistic, role-driven interactions and
 
 [![PrZMA Education Demo](https://img.youtube.com/vi/a6jJPpnSnU4/0.jpg)](https://www.youtube.com/watch?v=a6jJPpnSnU4)
 
+## 🧪 All Trigger Mode (Tool Testing)
+
+In Tool Testing mode, PrZMA provides an **All Trigger** strategy that systematically activates all detectable clickable UI elements within a bounded Action Space.
+
+Rather than reproducing a single user workflow, this mode exhaustively explores the functionality surface of a service in order to induce conditionally generated artifacts.
+
+In All Trigger mode, a **Logical Snapshot is executed at every action (action-level snapshotting).**
+
+For each action-level Logical Snapshot, PrZMA performs the following:
+
+- Collects the HTML source code, DOM object structure, and rendered screenshot at that specific state  
+- Extracts IndexedDB, LevelDB, and Chromium Cache artifacts, interprets them using **ccl_chromium_reader**, and stores the parsed results in a unified Tracking DB  
+
+This enables structured cross-snapshot comparison and quantitative observation of state changes induced by service functionality.
+
+---
+
+## 🔎 Demonstration: Discord Snapshot Comparison
+
+Three All Trigger executions were performed on Discord Web:
+
+- `discord_ft1` : Baseline execution  
+- `discord_ft2` : Additional standard interactions  
+- `discord_ft3` : Thread creation and interaction within the thread  
+
+All execution results were stored in the Tracking DB and compared using SQLite queries.
+
+---
+
+### #1. Cache Diff (`discord_ft1` vs `discord_ft2`)
+
+The following result shows cache entries present only in `discord_ft2` compared to `discord_ft1`.
+
+![Cache Diff Result](./images/cache_diff_demo.png)
+
+Entries labeled `ft2_only` represent URL/key pairs observed exclusively in the later snapshot (`discord_ft2.cache_dump`).  
+These indicate newly generated cache data triggered by additional interactions.
+
+---
+
+### #2. Schema Change (`discord_ft1` vs `discord_ft3`)
+
+During `discord_ft3`, a thread was created within an existing channel, followed by interactions inside that thread.
+
+The comparison below shows structural differences between `discord_ft1` and `discord_ft3`.
+
+![Schema Drift Result](./images/schema_drift_demo.png)
+
+The following newly observed fields were identified:
+
+- `message_reference`
+- `reactions`
+- `referenced_message`
+- `sticker_items`
+
+The channel ID remains unchanged, indicating structural expansion within an existing channel rather than the creation of a new channel entity.
+
+---
+
+All Trigger mode therefore systematically activates service functionality and enables action-aligned cross-snapshot comparison of structural changes, supporting forensic tool validation and artifact drift analysis.
+
 
 ## 🎓 Typical Use Cases
 

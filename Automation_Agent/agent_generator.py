@@ -134,6 +134,8 @@ def boot_vms_from_config(vm_boot_cfg: Dict[str, Any], agent_ids: List[str]) -> N
             vmx = vmx_paths.get(aid)
             if not vmx:
                 raise RuntimeError(f"vm_boot.vmx_paths missing vmx for agent_id={aid}")
+            import sys
+            print(f"[vm_boot] Starting VM for agent {aid}: {vmx}", file=sys.stderr)
             res = vmrun_start(vmrun_path, vmx, gui=gui, vm_password=vm_password)
 
             if res.returncode != 0:
@@ -190,8 +192,10 @@ def generate_vm_endpoints(
     dotenv_path = Path(__file__).resolve().parents[1] / ".env"
     load_dotenv(dotenv_path)
 
+    import sys
     if boot_first:
         boot_vms_from_config(config.get("vm_boot") or {}, agent_ids)
+        print("[discovery] VMs started, scanning for agents...", file=sys.stderr, flush=True)
 
     discovery = config.get("discovery") or {}
 
@@ -204,9 +208,11 @@ def generate_vm_endpoints(
             raise RuntimeError("Missing discovery.scan_targets (or discovery.subnet)")
 
     port = int(discovery.get("rpyc_port", discovery.get("port", 18861)))
+    print(f"[discovery] Looking for {len(agent_ids)} agent(s) on {targets}, port {port} (timeout {wait_timeout_sec}s)", file=sys.stderr, flush=True)
 
     deadline = time.time() + wait_timeout_sec
     discovered: List[Tuple[str, int]] = []
+    last_log = 0.0
 
     while time.time() < deadline:
         tmp: List[Tuple[str, int]] = []
@@ -219,7 +225,13 @@ def generate_vm_endpoints(
         uniq = {(h, p) for (h, p) in tmp}
         discovered = sorted(list(uniq), key=lambda x: int(ipaddress.ip_address(x[0])))
 
+        now = time.time()
+        if now - last_log >= 10.0:
+            print(f"[discovery] Found {len(discovered)}/{len(agent_ids)} agents, waiting...", file=sys.stderr, flush=True)
+            last_log = now
+
         if len(discovered) >= len(agent_ids):
+            print(f"[discovery] All {len(agent_ids)} agent(s) found.", file=sys.stderr, flush=True)
             break
         time.sleep(poll_interval_sec)
 

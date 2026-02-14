@@ -347,8 +347,13 @@ def compile_interpreted_przma_config(
     n_agents = _infer_agent_count(required_actions)
     chosen_agent_ids = available_agent_ids[: max(1, min(n_agents, len(available_agent_ids)))]
 
-    # needed platforms
+    # needed platforms (from required_actions)
     needed_platforms = _infer_needed_platforms(required_actions)
+    # target_application: when set (e.g. full_trigger on Discord), ensure bootstrap + full_trigger + main loop run on that platform
+    target_application = (tool_plan.get("target_application") or tp.get("target_application")) or None
+    if target_application and target_application in ("discord_web", "telegram_web"):
+        needed_platforms = set(needed_platforms) | {target_application}
+        cfg["target_application"] = target_application
 
     # build agents override
     agents: Dict[str, Any] = {}
@@ -397,14 +402,14 @@ def compile_interpreted_przma_config(
 
     cfg["agents"] = agents
 
-    # rendezvous
-    # choose one primary rendezvous platform if multiple
+    # rendezvous (so bootstrap opens that app; when target_application is set, prefer it so full_trigger runs there)
     rendezvous_platform = ""
-    if "discord_web" in needed_platforms:
+    if target_application and target_application in needed_platforms:
+        rendezvous_platform = target_application
+    elif "discord_web" in needed_platforms:
         rendezvous_platform = "discord_web"
     elif len(needed_platforms) == 1:
         rendezvous_platform = list(needed_platforms)[0]
-    # else keep empty for now (or decide priority)
     cfg["rendezvous"] = {"platform": rendezvous_platform}
 
     # scenario
@@ -457,6 +462,19 @@ def compile_interpreted_przma_config(
     primary_agent = chosen_agent_ids[0] if chosen_agent_ids else default_agent_id
     trigger_names = [x for x in trigger_actions if isinstance(x, str)]
 
+    # full_trigger (tool testing): when enabled, add browser.full_trigger_click so each click triggers snapshot
+    full_trigger = (tool_plan.get("full_trigger") or tp.get("full_trigger")) is True
+    if full_trigger:
+        if "browser.full_trigger_click" not in trigger_names:
+            trigger_names = list(trigger_names) + ["browser.full_trigger_click"]
+        cfg["run_full_trigger"] = True
+        cfg["full_trigger_agent"] = primary_agent
+        ft_max_clicks = tp.get("full_trigger_max_clicks") or 30
+        cfg["full_trigger_max_clicks"] = ft_max_clicks
+        cfg["full_trigger_wait_after_click_sec"] = tp.get("full_trigger_wait_after_click_sec") or 2.0
+        # Reserve action budget for full_trigger so LLM loop still has room for required_actions
+        run_limits["max_actions_total"] = run_limits.get("max_actions_total", 30) + int(ft_max_clicks)
+
     cfg["snapshot"] = cfg.get("snapshot") or {}
     cfg["snapshot"]["time_trigger"] = {"enabled": False, "interval": "00:10", "cooldown_sec": 0}
     cfg["snapshot"]["event_trigger"] = {
@@ -465,12 +483,15 @@ def compile_interpreted_przma_config(
         "cooldown_sec": 0,
         "conditions": [{"left": "agent_id", "op": "eq", "right": primary_agent}],
     }
-    cfg["snapshot"]["collection_plan"] = {
+    collection_plan: Dict[str, Any] = {
         "agent_id": primary_agent,
         "artifacts": list(required_artifacts),
         "limits": {"max_file_mb": 400, "max_total_mb": 2048},
         "options": {"browser": "chrome", "profile": "Default"},
     }
+    if full_trigger:
+        collection_plan["capture_web_state"] = True
+    cfg["snapshot"]["collection_plan"] = collection_plan
 
     return cfg
 
@@ -490,6 +511,9 @@ def main() -> int:
     ap.add_argument("--out-dir", default="", help="Output directory (or TMI_OUT_DIR)")
     ap.add_argument("--run-id", default="", help="Run id (or PRZMA_RUN_ID). If empty, auto-generated.")
     ap.add_argument("--default-agent", default="A1", help="Default agent_id for snapshot collection plan")
+    ap.add_argument("--full-trigger", action="store_true", help="Enable full trigger (tool testing): enumerate clickables, click each, trigger snapshot per click")
+    ap.add_argument("--full-trigger-target", choices=["discord_web", "telegram_web"], default=None, help="Target application for full trigger (and bootstrap): run full_trigger and main loop on this platform (e.g. Discord)")
+    ap.add_argument("--full-trigger-max-clicks", type=int, default=0, help="Max clicks for full trigger (default from config, typically 30)")
 
     args = ap.parse_args()
 
@@ -566,6 +590,18 @@ def main() -> int:
         artifact_catalog_json=catalog_json,
         prompts_module=prompts_module,
     )
+
+    if getattr(args, "full_trigger", False):
+        tool_plan["full_trigger"] = True
+        tp_inner = tool_plan.get("tool_plan")
+        if isinstance(tp_inner, dict):
+            tp_inner["full_trigger"] = True
+            if getattr(args, "full_trigger_max_clicks", 0) > 0:
+                tp_inner["full_trigger_max_clicks"] = args.full_trigger_max_clicks
+        if getattr(args, "full_trigger_target", None):
+            tool_plan["target_application"] = args.full_trigger_target
+            if isinstance(tool_plan.get("tool_plan"), dict):
+                tool_plan["tool_plan"]["target_application"] = args.full_trigger_target
 
     # template config (default to repo_root/przma_config.json)
     template_cfg: Optional[Dict[str, Any]] = None

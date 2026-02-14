@@ -138,6 +138,8 @@ class SnapshotPolicy(WireModel):
     layer_policies: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # layer -> LayerPolicy.to_dict()
     platform: Optional[Dict[str, Any]] = None
     ts: str = field(default_factory=utc_now_iso)
+    # When True, VM captures web state (HTML, DOM, screenshot, IndexedDB schema) into snapshot
+    capture_web_state: bool = False
 
 
 # Currently, shared/schemas.py is based on CollectedFile, but since snapper often uses CollectedArtifact, compatibility is provided

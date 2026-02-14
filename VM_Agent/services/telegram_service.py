@@ -40,43 +40,154 @@ class TelegramService:
         params:
           - chat: str (chat name / username)
         """
+        import time
         chat = params["chat"]
         timeout_ms = int(params.get("timeout_ms", 30000))
         self.ensure_open(agent_id, (params.get("variant") or "k"), timeout_ms)
         page = self._page(agent_id)
 
-        # Try search box
+        # Wait for Telegram UI to load (check for main UI elements)
+        try:
+            # Wait for either chat list or search box to appear
+            page.wait_for_selector("#page-chats, #column-left, input[placeholder*='Search'], input[type='text']", timeout=10000)
+            time.sleep(1.0)  # Additional wait for UI to stabilize
+        except Exception:
+            pass  # Continue anyway
+
+        # Try search box with more specific selectors
         candidates = [
             "input[placeholder*='Search']",
+            "input[placeholder*='search']",
+            ".input-search input",
+            "#column-left input[type='text']",
             "input[type='text']",
         ]
         box = None
         for sel in candidates:
             loc = page.locator(sel).first
             try:
-                loc.wait_for(timeout=2000)
-                box = loc
-                break
+                if loc.is_visible(timeout=3000):
+                    box = loc
+                    break
             except Exception:
                 continue
+
+        if box is None:
+            # Try clicking search button first (if search box is hidden)
+            try:
+                search_btn = page.locator("button[aria-label*='Search'], .sidebar-header__btn-container button, .input-search-button").first
+                if search_btn.is_visible(timeout=2000):
+                    search_btn.click(timeout=5000)
+                    time.sleep(0.5)
+                    # Retry finding search box
+                    for sel in candidates:
+                        loc = page.locator(sel).first
+                        try:
+                            if loc.is_visible(timeout=2000):
+                                box = loc
+                                break
+                        except Exception:
+                            continue
+            except Exception:
+                pass
 
         if box is None:
             return {"warning": "Search box not found. Ensure Telegram Web is logged in and UI loaded.", "current_url": page.url}
 
         box.click(timeout=timeout_ms)
         box.fill(chat, timeout=timeout_ms)
+        time.sleep(0.5)  # Wait for search results
 
-        # click first result
+        # click first result (improved selectors)
+        original_url = page.url
+        chat_opened = False
+        final_chat_url = original_url
+        
         try:
-            page.locator("div[role='listitem'], .ListItem, .chatlist a, .chatlist .row").first.click(timeout=timeout_ms)
+            # Try more specific selectors for chat list items
+            result_selectors = [
+                ".chatlist a",
+                ".chatlist .row",
+                "div[role='listitem']",
+                ".ListItem",
+                ".search-super-content-chats a",
+                "a[href*='#']",
+                ".search-result .ListItem-button",
+                ".chat-item-clickable",
+                ".left-search-local-suggestion .ListItem-button",
+            ]
+            for sel in result_selectors:
+                try:
+                    result = page.locator(sel).first
+                    if result.is_visible(timeout=2000):
+                        result.click(timeout=timeout_ms)
+                        time.sleep(2.0)  # Wait for chat to open
+                        # Check if URL changed (chat opened)
+                        new_url = page.url
+                        if new_url != original_url:
+                            final_chat_url = new_url
+                            if "/#" in new_url:
+                                chat_opened = True
+                        break
+                except Exception:
+                    continue
+            if not chat_opened:
+                # fallback (press enter)
+                page.keyboard.press("Enter")
+                time.sleep(2.0)
+                new_url = page.url
+                if new_url != original_url:
+                    final_chat_url = new_url
+                    if "/#" in new_url:
+                        chat_opened = True
         except Exception:
             # fallback (press enter)
             try:
                 page.keyboard.press("Enter")
+                time.sleep(2.0)
+                new_url = page.url
+                if new_url != original_url:
+                    final_chat_url = new_url
+                    if "/#" in new_url:
+                        chat_opened = True
             except Exception:
                 pass
 
-        return {"selected": chat, "current_url": page.url}
+        # If URL didn't change, wait a bit more and check again (Telegram Web sometimes delays URL update)
+        if not chat_opened:
+            time.sleep(3.0)  # Longer wait for Telegram Web to update URL
+            final_url = page.url
+            final_chat_url = final_url
+            if final_url != original_url and "/#" in final_url:
+                chat_opened = True
+        
+        # Also check if message input box is visible (indicates chat is open)
+        # If chat is open but URL hasn't updated, use the current URL anyway
+        message_input_visible = False
+        try:
+            message_input_selectors = [
+                "div[contenteditable='true']",
+                "div[role='textbox']",
+                "textarea",
+                ".input-message-input",
+                "#column-center div[contenteditable='true']",
+            ]
+            for sel in message_input_selectors:
+                try:
+                    if page.locator(sel).first.is_visible(timeout=2000):
+                        message_input_visible = True
+                        chat_opened = True  # If message input is visible, chat is open
+                        # Get current URL again (might have updated)
+                        final_chat_url = page.url
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # Return the final URL (even if it's the same, Telegram Web might not update URL immediately)
+        # But if message input is visible, we know chat is open
+        return {"selected": chat, "current_url": final_chat_url, "chat_opened": chat_opened, "message_input_visible": message_input_visible}
 
     def action_send_message(self, agent_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """

@@ -19,6 +19,7 @@ from services.discord_service import DiscordService
 from services.telegram_service import TelegramService
 
 # snapshot executor (VM)
+import tempfile
 from services.snapshot.snapper import Snapper
 
 # wire schemas
@@ -92,6 +93,15 @@ class PrZMAService(rpyc.Service):
                 if kind == "execute_action":
                     req: ActionRequest = payload
                     fut.set_result(cls._execute_action_impl(req))
+                    continue
+
+                if kind == "capture_page_state":
+                    agent_id, out_dir = payload
+                    try:
+                        r = cls._browser.capture_page_state(agent_id, out_dir)
+                        fut.set_result(r)
+                    except Exception as e:
+                        fut.set_result({"error": str(e)})
                     continue
 
                 fut.set_result({"ok": False, "error": f"Unknown kind: {kind}"})
@@ -250,6 +260,33 @@ class PrZMAService(rpyc.Service):
 
             # Snapper is only responsible for “running the collection + generating the zip/manifest”
             policy_dict = policy.to_dict()
+
+            # Optional: capture web state (HTML, DOM, screenshot, IndexedDB schema) for schema tracking
+            capture_web_state = policy_dict.get("capture_web_state") is True
+            if capture_web_state:
+                self._ensure_action_worker()
+                tmpdir = tempfile.mkdtemp(prefix="przma_web_state_")
+                fut: concurrent.futures.Future = concurrent.futures.Future()
+                self._action_q.put(("capture_page_state", (policy.agent_id, tmpdir), fut))
+                try:
+                    cap = fut.result(timeout=60)
+                    if isinstance(cap, dict) and "error" not in cap:
+                        paths = [cap.get("html_path"), cap.get("dom_path"), cap.get("screenshot_path"), cap.get("schema_path")]
+                        paths = [p for p in paths if p]
+                        if paths:
+                            layers = list(policy_dict.get("layers") or []) + ["web_state"]
+                            policy_dict["layers"] = layers
+                            lp = policy_dict.get("layer_policies") or {}
+                            lp["web_state"] = {
+                                "enabled": True,
+                                "include_paths": paths,
+                                "max_file_mb": 50,
+                                "max_total_mb": 100,
+                                "meta": {"capture": "html_dom_screenshot_schema"},
+                            }
+                            policy_dict["layer_policies"] = lp
+                except Exception:
+                    pass
 
             # Inject runtime profile root into browser layer meta (so {CHROME_ROOT}/{PROFILE} resolve correctly)
             try:

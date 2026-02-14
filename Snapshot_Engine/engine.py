@@ -70,6 +70,12 @@ def _cmp(op: str, left: Any, right: Any) -> bool:
             return left == right
         if op == "ne":
             return left != right
+        if op == "in":
+            if right is None:
+                return False
+            if isinstance(right, (list, tuple, set)):
+                return left in right
+            return False
         if op == "contains":
             if left is None:
                 return False
@@ -493,7 +499,11 @@ class SnapshotEngine:
         )
 
         LOG.info("Trigger snapshot: agent=%s snapshot_id=%s type=%s", agent_id, snapshot_id, trigger_type)
-        vm_result = self._call_vm_snapshot_collect(agent_id, policy.to_dict())
+        import sys
+        print("[PrZMA] Snapshot triggered: agent=%s snapshot_id=%s" % (agent_id, snapshot_id), file=sys.stderr, flush=True)
+        policy_dict = policy.to_dict()
+        policy_dict["capture_web_state"] = plan.get("capture_web_state")
+        vm_result = self._call_vm_snapshot_collect(agent_id, policy_dict)
         self._persist_snapshot_result(agent_id, snapshot_id, trigger.to_dict(), policy.to_dict(), vm_result)
 
     def _call_vm_snapshot_collect(self, agent_id: str, policy_dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -566,6 +576,23 @@ class SnapshotEngine:
             },
         )
 
+        # Run-level IndexedDB schema tracking: append web_state_indexeddb_schema (and optional ccl_chromium_reader) to run_dir DB
+        zpath = snap_dir / "snapshot.zip"
+        if zpath.exists():
+            try:
+                from Snapshot_Engine import indexeddb_schema_db
+                if indexeddb_schema_db.append_snapshot(
+                    run_dir,
+                    snapshot_id,
+                    zpath,
+                    agent_id,
+                    trigger_dict=trigger_dict,
+                    manifest=manifest,
+                ):
+                    LOG.debug("IndexedDB schema appended for snapshot %s", snapshot_id)
+            except Exception as e:
+                LOG.debug("IndexedDB schema append skipped or failed: %s", e)
+
     def _time_loop(self) -> None:
         while not self._stop_evt.is_set():
             interval = self._get_time_interval_sec()
@@ -622,13 +649,27 @@ class SnapshotEngine:
                             pos = f.tell()
                             break
                         line = line.strip()
+                        # Skip empty lines
                         if not line:
+                            continue
+                        # Skip lines that don't start with '{' (likely incomplete JSON from concurrent writes)
+                        if not line.startswith("{"):
                             continue
                         try:
                             entry = json.loads(line)
                             self.notify_action(entry)
+                        except json.JSONDecodeError as e:
+                            # Only log if it's a real JSON error, not just incomplete line
+                            # Incomplete lines (from concurrent writes) are common and should be silently skipped
+                            if e.pos > 0 or len(line) > 10:  # Only log if we parsed some of it or it's substantial
+                                LOG.debug("Skipping incomplete/invalid JSON line (likely from concurrent write): %s...", line[:100] if len(line) > 100 else line)
+                            # Don't update pos for incomplete lines - we'll retry on next iteration
+                            continue
                         except Exception as e:
-                            LOG.warning("Failed to parse action log line: %s", e)
+                            # Other errors (non-JSON) - log but continue
+                            LOG.warning("Failed to parse action log line: %s (line preview: %s...)", e, line[:100] if len(line) > 100 else line)
+                    # Only update pos if we successfully read to end of file
+                    pos = f.tell()
                 self._stop_evt.wait(0.2)
             except Exception as e:
                 LOG.warning("Tail loop error: %s", e)
