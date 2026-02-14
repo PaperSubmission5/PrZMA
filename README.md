@@ -161,6 +161,30 @@ For multi-agent execution, PrZMA requires **Windows virtual machines configured 
 
 Each VM represents an independent agent and can participate in multi-user or multi-platform scenarios. (For most scenarios, users only need to modify `przma_config.json`.)
 
+## 🎬 Demo
+This demo runs `przma_education_config.json` in a realistic forensic triage scenario.
+
+Three investigators meet in a Discord channel:
+- **Alice (Agent1)** – Team leader. Coordinates the triage, assigns tasks, and keeps the discussion focused.
+- **Bob (Agent2)** – Browser cache & timeline specialist. Verifies Chromium artifacts and execution traces.
+- **Eve (Agent3)** – OSINT-oriented analyst. Cross-checks Discord storage artifacts and challenges assumptions.
+  
+They conduct a short, time-boxed investigation:
+- Alice assigns roles and sets priorities.
+- Bob and Eve perform web lookups to verify artifact locations.
+- One agent uploads an evidence-style file (e.g., IOC list, timeline CSV).
+- The discussion ends with a concise triage plan.
+
+During execution, the Snapshot Engine performs **time-based and action-based logical snapshots**, collecting:
+
+- `chromium.cache.cache_data`
+- `webapp.discord.chromium.storage`
+
+The demo illustrates how PrZMA generates realistic, role-driven interactions and reproducible forensic artifacts under controlled snapshot policies.
+
+[▶️ Demo Video](./demo/przma_education_demo.mp4)
+
+
 ## 🎓 Typical Use Cases
 
 - **Forensic Education**
