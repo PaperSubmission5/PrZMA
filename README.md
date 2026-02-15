@@ -4,6 +4,21 @@
 This repository is the **official repository** of *PrZMA*, a framework submitted to **DFRWS USA 2026**.  
 PrZMA leverages **LLM-driven planning and automation** to generate **reproducible, action-grounded digital forensic datasets** across **multi-user, multi-platform environments**.
 
+<details>
+<summary>📑 Table of Contents</summary>
+
+- [Overview](#-overview)
+- [Key Features](#key-features)
+- [Multi-Layer Artifact Collection](#multi-layer-artifact-collection)
+- [Supported Applications & Scenarios](#supported-applications--scenarios)
+- [Repository Structure](#-repository-structure)
+- [Requirements](#requirements)
+- [Demo](#-demo)
+- [All Trigger Mode (Tool Testing)](#-all-trigger-mode-tool-testing)
+- [Typical Use Cases](#-typical-use-cases)
+
+</details>
+
 ## 🔍 Overview
 
 Digital forensic research/education and tool validation require realistic, well-documented datasets.  
@@ -43,6 +58,7 @@ PrZMA is designed for **both education-oriented scenarios** and **forensic tool 
 - **Dual-Purpose Design**
   - **Education**: realistic analyst-style interactions and artifact generation  
   - **Tool Testing**: reproducible datasets for validating forensic tools and detecting artifact drift  
+    - **All Trigger Mode**: Exhaustively activates UI elements and performs action-level logical snapshots to induce functionality-driven artifact schema changes.
 
 ---
 
@@ -184,7 +200,8 @@ The demo illustrates how PrZMA generates realistic, role-driven interactions and
 
 [![PrZMA Education Demo](https://img.youtube.com/vi/a6jJPpnSnU4/0.jpg)](https://www.youtube.com/watch?v=a6jJPpnSnU4)
 
-## 🧪 Full Trigger Mode (Tool Testing)
+
+## ⚙️ Full Trigger Mode (Tool Testing)
 
 In Tool Testing mode, PrZMA provides a **Full Trigger** strategy designed to systematically activate all detectable UI functionality within a bounded Action Space.
 
@@ -200,8 +217,7 @@ For each action-level snapshot, PrZMA:
 
 This enables quantitative, action-aligned cross-snapshot comparison.
 
-
-## 🔎 Discord Snapshot Comparison
+### 🔎 Demonstration: Discord Snapshot Comparison
 
 Three Full Trigger executions were performed on Discord Web:
 
@@ -211,6 +227,7 @@ Three Full Trigger executions were performed on Discord Web:
 
 All results were stored in the Tracking DB and compared using SQLite.
 
+
 **Cache Diff (`discord_ft1` vs `discord_ft2`)**
 
 ![Cache Diff Result](images/cache_diff_demo.png)
@@ -219,7 +236,9 @@ Entries labeled `ft2_only` represent cache artifacts generated exclusively by ad
 
 **Schema Change (`discord_ft1` vs `discord_ft3`)**
 
+
 ![Schema Drift Result](images/schema_drift_demo.png)
+
 
 Newly observed fields:
 - `message_reference`
