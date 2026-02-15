@@ -198,7 +198,7 @@ During execution, the Snapshot Engine performs **time-based and action-based log
 
 The demo illustrates how PrZMA generates realistic, role-driven interactions and reproducible forensic artifacts under controlled snapshot policies.
 
-[![PrZMA Education Demo](https://img.youtube.com/vi/a6jJPpnSnU4/0.jpg)](https://www.youtube.com/watch?v=a6jJPpnSnU4)
+[![PrZMA Education Demo](https://img.youtube.com/vi/DVqMYSUfUdE/0.jpg)](https://www.youtube.com/watch?v=DVqMYSUfUdE)
 
 
 ## ⚙️ Full Trigger Mode (Tool Testing)
