@@ -243,7 +243,7 @@ Even within a single snapshot, structural heterogeneity is observable across Ind
 
 Because Telegram Web reflects cloud-synchronized data, structural changes may occur due to **server-side updates**, not only local interactions.
 
-The same scenario will be re-executed one month later to observe longitudinal schema drift.
+The same scenario will be re-executed one month later to observe longitudinal schema drift. 
 
 This demonstrates that PrZMA supports:
 - Action-induced schema expansion  
