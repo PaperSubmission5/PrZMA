@@ -1067,7 +1067,7 @@ def _schema_detail_from_ccl_leveldb(
                         "key_path_json": key_path_json,
                         "auto_increment": auto_increment,
                         "index_names_json": index_names_json,
-                        "value_fields_json": json.dumps(sorted(value_fields), ensure_ascii=False),
+                        "value_fields_json": json.dumps(sorted(value_fields, key=str), ensure_ascii=False),
                         "sample_count": sample_count,
                     })
                     if samples_for_store:
@@ -1079,7 +1079,11 @@ def _schema_detail_from_ccl_leveldb(
                                 "samples": samples_for_store,
                             }
                         )
-            except Exception:
+            except Exception as e:
+                # Skip this DB (e.g. tweb-account-1 if iteration fails); log for debugging
+                import sys
+                db_id_str = getattr(db, "name", str(db))
+                print("Warning: IndexedDB db %s skipped: %s" % (db_id_str, e), file=sys.stderr, flush=True)
                 continue
     except Exception:
         pass

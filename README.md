@@ -184,66 +184,71 @@ The demo illustrates how PrZMA generates realistic, role-driven interactions and
 
 [![PrZMA Education Demo](https://img.youtube.com/vi/a6jJPpnSnU4/0.jpg)](https://www.youtube.com/watch?v=a6jJPpnSnU4)
 
-## 🧪 All Trigger Mode (Tool Testing)
+## 🧪 Full Trigger Mode (Tool Testing)
 
-In Tool Testing mode, PrZMA provides an **All Trigger** strategy that systematically activates all detectable clickable UI elements within a bounded Action Space.
+In Tool Testing mode, PrZMA provides a **Full Trigger** strategy designed to systematically activate all detectable UI functionality within a bounded Action Space.
 
-Rather than reproducing a single user workflow, this mode exhaustively explores the functionality surface of a service in order to induce conditionally generated artifacts.
+The primary goal of Full Trigger is to **induce schema expansion** by triggering conditionally generated artifacts across the service.
 
-In All Trigger mode, a **Logical Snapshot is executed at every action (action-level snapshotting).**
+A **Logical Snapshot is executed at every action (action-level snapshotting).**
 
-For each action-level Logical Snapshot, PrZMA performs the following:
+For each action-level snapshot, PrZMA:
+- Collects HTML source, DOM structure, and rendered screenshots  
+- Performs a logical snapshot of browser storage (IndexedDB, LevelDB, and Chromium Cache), parses the artifacts using `ccl_chromium_reader`
+- Stores the structured results in a Tracking DB managed in the format `schema_tracking_{run_id}.db`
 
-- Collects the HTML source code, DOM object structure, and rendered screenshot at that specific state  
-- Extracts IndexedDB, LevelDB, and Chromium Cache artifacts, interprets them using **ccl_chromium_reader**, and stores the parsed results in a unified Tracking DB  
 
-This enables structured cross-snapshot comparison and quantitative observation of state changes induced by service functionality.
+This enables quantitative, action-aligned cross-snapshot comparison.
 
----
 
-## 🔎 Demonstration: Discord Snapshot Comparison
+## 🔎 Discord Snapshot Comparison
 
-Three All Trigger executions were performed on Discord Web:
+Three Full Trigger executions were performed on Discord Web:
 
 - `discord_ft1` : Baseline execution  
 - `discord_ft2` : Additional standard interactions  
-- `discord_ft3` : Thread creation and interaction within the thread  
+- `discord_ft3` : Thread creation and interaction  
 
-All execution results were stored in the Tracking DB and compared using SQLite queries.
+All results were stored in the Tracking DB and compared using SQLite.
 
----
+**Cache Diff (`discord_ft1` vs `discord_ft2`)**
 
-### #1. Cache Diff (`discord_ft1` vs `discord_ft2`)
+![Cache Diff Result](images/cache_diff_demo.png)
 
-The following result shows cache entries present only in `discord_ft2` compared to `discord_ft1`.
+Entries labeled `ft2_only` represent cache artifacts generated exclusively by additional interactions.
 
-![Cache Diff Result](./images/cache_diff_demo.png)
+**Schema Change (`discord_ft1` vs `discord_ft3`)**
 
-Entries labeled `ft2_only` represent URL/key pairs observed exclusively in the later snapshot (`discord_ft2.cache_dump`).  
-These indicate newly generated cache data triggered by additional interactions.
+![Schema Drift Result](images/schema_drift_demo.png)
 
----
-
-### #2. Schema Change (`discord_ft1` vs `discord_ft3`)
-
-During `discord_ft3`, a thread was created within an existing channel, followed by interactions inside that thread.
-
-The comparison below shows structural differences between `discord_ft1` and `discord_ft3`.
-
-![Schema Drift Result](./images/schema_drift_demo.png)
-
-The following newly observed fields were identified:
-
+Newly observed fields:
 - `message_reference`
 - `reactions`
 - `referenced_message`
 - `sticker_items`
 
-The channel ID remains unchanged, indicating structural expansion within an existing channel rather than the creation of a new channel entity.
+The channel ID remained unchanged, indicating **structural expansion within an existing entity** rather than entity creation.
 
----
+These results confirm that Full Trigger execution induces object-level schema expansion.
 
-All Trigger mode therefore systematically activates service functionality and enables action-aligned cross-snapshot comparison of structural changes, supporting forensic tool validation and artifact drift analysis.
+## 🗄️ Schema Tracking Example: Telegram Web IndexedDB
+
+PrZMA applies the same Tracking DB infrastructure to **cloud-synchronized web applications**.
+
+The figure below shows the Tracking DB generated from a Telegram Web snapshot captured in **February 2026**.
+
+![Telegram Schema Demo](images/telegram_schema_demo.png)
+
+Even within a single snapshot, structural heterogeneity is observable across IndexedDB object stores.
+
+Because Telegram Web reflects cloud-synchronized data, structural changes may occur due to **server-side updates**, not only local interactions.
+
+The same scenario will be re-executed one month later to observe longitudinal schema drift.
+
+This demonstrates that PrZMA supports:
+- Action-induced schema expansion  
+- Time-based structural drift detection  
+- Validation of forensic tools against evolving web application schemas  
 
 
 ## 🎓 Typical Use Cases

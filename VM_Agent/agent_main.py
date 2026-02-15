@@ -19,6 +19,7 @@ from services.discord_service import DiscordService
 from services.telegram_service import TelegramService
 
 # snapshot executor (VM)
+import os
 import tempfile
 from services.snapshot.snapper import Snapper
 
@@ -291,25 +292,31 @@ class PrZMAService(rpyc.Service):
             # Inject runtime profile root into browser layer meta (so {CHROME_ROOT}/{PROFILE} resolve correctly)
             try:
                 sess = type(self)._browser._sessions.get(policy.agent_id)  # BrowserSession or None
-                if sess and sess.user_data_dir:
-                    lp_all = policy_dict.get("layer_policies") or {}
-                    browser_lp = lp_all.get("browser")
-                    if isinstance(browser_lp, dict):
-                        meta = browser_lp.get("meta") or {}
-                        if not isinstance(meta, dict):
-                            meta = {}
-
+                lp_all = policy_dict.get("layer_policies") or {}
+                # Host sends "browser_artifacts" (artifact_catalog layer name); support both for compatibility
+                browser_lp = lp_all.get("browser_artifacts") or lp_all.get("browser")
+                if isinstance(browser_lp, dict):
+                    meta = browser_lp.get("meta") or {}
+                    if not isinstance(meta, dict):
+                        meta = {}
+                    if sess and sess.user_data_dir:
                         prof = sess.profile_name or meta.get("PROFILE") or meta.get("profile") or "Default"
                         meta["PROFILE"] = prof
                         meta["profile"] = prof
-
-                        # make catalog paths point to the actual profile root used by Playwright
                         meta["CHROME_ROOT"] = sess.user_data_dir
-                        meta["EDGE_ROOT"] = sess.user_data_dir  # safe fallback for edge catalog keys (too)
-
-                        browser_lp["meta"] = meta
-                        lp_all["browser"] = browser_lp
-                        policy_dict["layer_policies"] = lp_all
+                        meta["EDGE_ROOT"] = sess.user_data_dir
+                    else:
+                        # No session (e.g. snapshot after browser.close): use same path layout as browser_service
+                        drive = os.environ.get("SYSTEMDRIVE") or "C:"
+                        fallback_root = os.path.join(drive + os.sep, "PrZMA", "profiles", policy.agent_id, "chrome")
+                        meta["PROFILE"] = meta.get("PROFILE") or meta.get("profile") or "Default"
+                        meta["profile"] = meta["PROFILE"]
+                        meta["CHROME_ROOT"] = fallback_root
+                        meta["EDGE_ROOT"] = fallback_root
+                    browser_lp["meta"] = meta
+                    layer_key = "browser_artifacts" if "browser_artifacts" in lp_all else "browser"
+                    lp_all[layer_key] = browser_lp
+                    policy_dict["layer_policies"] = lp_all
             except Exception:
                 pass
 
